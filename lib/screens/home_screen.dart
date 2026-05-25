@@ -7,7 +7,9 @@ import '../widgets/actuator_control.dart';
 import '../screens/analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback onLogout;
+
+  const HomeScreen({super.key, required this.onLogout});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -17,6 +19,14 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<FarmProvider>().initMqtt();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F8E9),
@@ -24,10 +34,12 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           slivers: [
             _buildAppBar(context),
+            SliverToBoxAdapter(child: SizedBox(height: 12)),
             if (_selectedIndex == 0) ..._buildAirDashboard(context),
             if (_selectedIndex == 1) ..._buildWaterDashboard(context),
             if (_selectedIndex == 2) ..._buildSoilDashboard(context),
             if (_selectedIndex == 3) ..._buildControlDashboard(context),
+            SliverToBoxAdapter(child: SizedBox(height: 40)),
           ],
         ),
       ),
@@ -41,83 +53,276 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.air), label: 'Udara'),
           BottomNavigationBarItem(icon: Icon(Icons.water), label: 'Air'),
           BottomNavigationBarItem(icon: Icon(Icons.grass), label: 'Tanah'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Aktuator'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Aktuator',
+          ),
         ],
       ),
     );
   }
 
   Widget _buildAppBar(BuildContext context) {
+    final mqttConnected = context.watch<FarmProvider>().mqttConnected;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideScreen = screenWidth > 1024;
+
     String subtitle = "";
     switch (_selectedIndex) {
-      case 0: subtitle = "Air Monitoring (Udara)"; break;
-      case 1: subtitle = "Water Monitoring (Air)"; break;
-      case 2: subtitle = "Soil Monitoring (Tanah)"; break;
-      case 3: subtitle = "Controls & Actuators"; break;
+      case 0:
+        subtitle = "Monitoring Udara";
+        break;
+      case 1:
+        subtitle = "Monitoring Air";
+        break;
+      case 2:
+        subtitle = "Monitoring Tanah";
+        break;
+      case 3:
+        subtitle = "Kontrol Aktuator";
+        break;
     }
 
     return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Smart Farming",
-                  style: GoogleFonts.poppins(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1B5E20),
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AnalyticsScreen()),
-                    );
-                  },
-                  icon: const Icon(Icons.bar_chart, color: Color(0xFF2E7D32), size: 28),
-                ),
-                const SizedBox(width: 8),
-                const CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Color(0xFF2E7D32),
-                  child: Icon(Icons.person, color: Colors.white),
-                ),
-              ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
           ],
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: isWideScreen ? 32 : 20,
+            vertical: isWideScreen ? 20 : 16,
+          ),
+          child: Column(
+            children: [
+              // Header dengan logo dan institusi
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      'assets/LOGO POLINES.png',
+                      width: isWideScreen ? 80 : 60,
+                      height: isWideScreen ? 80 : 60,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  SizedBox(width: isWideScreen ? 24 : 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Smart Farming POLINES',
+                          style: GoogleFonts.poppins(
+                            fontSize: isWideScreen ? 24 : 20,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1B5E20),
+                          ),
+                        ),
+                        Text(
+                          'Politeknik Negeri Semarang',
+                          style: GoogleFonts.poppins(
+                            fontSize: isWideScreen ? 14 : 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildSensorGraphMenu(context),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Divider
+              Container(height: 1, color: Colors.grey[200]),
+              const SizedBox(height: 16),
+              // Subtitle dan status
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          subtitle,
+                          style: GoogleFonts.poppins(
+                            fontSize: isWideScreen ? 18 : 16,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isWideScreen)
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: mqttConnected
+                                ? Colors.green.withValues(alpha: 0.1)
+                                : Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                mqttConnected
+                                    ? Icons.cloud_done
+                                    : Icons.cloud_off,
+                                color: mqttConnected
+                                    ? Colors.green
+                                    : Colors.red,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                mqttConnected
+                                    ? 'MQTT Terhubung'
+                                    : 'MQTT Terputus',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: mqttConnected
+                                      ? Colors.green[700]
+                                      : Colors.red[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        IconButton(
+                          onPressed: widget.onLogout,
+                          icon: const Icon(
+                            Icons.logout,
+                            color: Color(0xFF2E7D32),
+                            size: 24,
+                          ),
+                          tooltip: 'Logout',
+                        ),
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: const Color(0xFF2E7D32),
+                          child: Text(
+                            'U',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildSensorGraphMenu(BuildContext context) {
+    return PopupMenuButton<int>(
+      position: PopupMenuPosition.under,
+      icon: const Icon(Icons.show_chart, color: Color(0xFF2E7D32), size: 28),
+      tooltip: 'Lihat Grafik Sensor',
+      itemBuilder: (BuildContext context) => [
+        const PopupMenuItem<int>(
+          value: 0,
+          child: Row(
+            children: [
+              Icon(Icons.air, color: Colors.orange, size: 20),
+              SizedBox(width: 12),
+              Text('Grafik Udara'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<int>(
+          value: 1,
+          child: Row(
+            children: [
+              Icon(Icons.water, color: Colors.blue, size: 20),
+              SizedBox(width: 12),
+              Text('Grafik Air'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<int>(
+          value: 2,
+          child: Row(
+            children: [
+              Icon(Icons.grass, color: Colors.brown, size: 20),
+              SizedBox(width: 12),
+              Text('Grafik Tanah'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<int>(
+          value: 3,
+          child: Row(
+            children: [
+              Icon(Icons.analytics, color: Colors.purple, size: 20),
+              SizedBox(width: 12),
+              Text('Analisis Lengkap'),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (value) {
+        if (value == 3) {
+          // Navigate to full analytics
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AnalyticsScreen()),
+          );
+        } else {
+          // Switch to the selected tab
+          setState(() => _selectedIndex = value);
+        }
+      },
+    );
+  }
+
   List<Widget> _buildAirDashboard(BuildContext context) {
     final reading = context.watch<FarmProvider>().reading;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossCount = screenWidth > 1200
+        ? 4
+        : screenWidth > 900
+        ? 3
+        : screenWidth > 600
+        ? 2
+        : 1;
+
     return [
-      _buildSectionSliver("Air Monitoring (Udara)"),
+      _buildSectionSliver("Monitoring Udara"),
       SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth > 900 ? 32.0 : 20.0,
+        ),
         sliver: SliverGrid.count(
-          crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 1.5,
+          crossAxisCount: crossCount,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+          childAspectRatio: 1.6,
           children: [
             SensorTile(
               label: "Temperature",
@@ -148,15 +353,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Widget> _buildWaterDashboard(BuildContext context) {
     final reading = context.watch<FarmProvider>().reading;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossCount = screenWidth > 1200
+        ? 4
+        : screenWidth > 900
+        ? 3
+        : screenWidth > 600
+        ? 2
+        : 1;
+
     return [
-      _buildSectionSliver("Water Monitoring (Air)"),
+      _buildSectionSliver("Monitoring Air"),
       SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth > 900 ? 32.0 : 20.0,
+        ),
         sliver: SliverGrid.count(
-          crossAxisCount: MediaQuery.of(context).size.width > 900 ? 4 : 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 1.5,
+          crossAxisCount: crossCount,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+          childAspectRatio: 1.6,
           children: [
             SensorTile(
               label: "Water Temp",
@@ -194,15 +410,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Widget> _buildSoilDashboard(BuildContext context) {
     final reading = context.watch<FarmProvider>().reading;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossCount = screenWidth > 1200
+        ? 4
+        : screenWidth > 900
+        ? 3
+        : screenWidth > 600
+        ? 2
+        : 1;
+
     return [
-      _buildSectionSliver("Soil Monitoring (Tanah)"),
+      _buildSectionSliver("Monitoring Tanah"),
       SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth > 900 ? 32.0 : 20.0,
+        ),
         sliver: SliverGrid.count(
-          crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 1.5,
+          crossAxisCount: crossCount,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+          childAspectRatio: 1.6,
           children: [
             SensorTile(
               label: "Soil Moisture",
@@ -220,7 +447,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SensorTile(
               label: "Soil NPK",
-              value: "${reading.nitrogen.toInt()}-${reading.phosphorus.toInt()}-${reading.potassium.toInt()}",
+              value:
+                  "${reading.nitrogen.toInt()}-${reading.phosphorus.toInt()}-${reading.potassium.toInt()}",
               unit: "mg/kg",
               icon: Icons.eco,
               color: Colors.green,
@@ -234,14 +462,19 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _buildControlDashboard(BuildContext context) {
     final provider = context.watch<FarmProvider>();
     final actuators = provider.actuators;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossCount = screenWidth > 900 ? 3 : 1;
+
     return [
-      _buildSectionSliver("Controls & Actuators"),
+      _buildSectionSliver("Kontrol Aktuator"),
       SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth > 900 ? 32.0 : 20.0,
+        ),
         sliver: SliverGrid.count(
-          crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 1,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
+          crossAxisCount: crossCount,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
           childAspectRatio: 4,
           children: [
             ActuatorControl(
@@ -275,13 +508,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSectionSliver(String title) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+        padding: const EdgeInsets.fromLTRB(32, 24, 32, 12),
         child: Text(
           title,
           style: GoogleFonts.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.black54,
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1B5E20),
           ),
         ),
       ),
@@ -307,15 +540,35 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _ledIndicator("Red", actuators.ledRed, Colors.red, (v) => provider.setLedRed(v)),
-          _ledIndicator("Yellow", actuators.ledYellow, Colors.yellow, (v) => provider.setLedYellow(v)),
-          _ledIndicator("Green", actuators.ledGreen, Colors.green, (v) => provider.setLedGreen(v)),
+          _ledIndicator(
+            "Red",
+            actuators.ledRed,
+            Colors.red,
+            (v) => provider.setLedRed(v),
+          ),
+          _ledIndicator(
+            "Yellow",
+            actuators.ledYellow,
+            Colors.yellow,
+            (v) => provider.setLedYellow(v),
+          ),
+          _ledIndicator(
+            "Green",
+            actuators.ledGreen,
+            Colors.green,
+            (v) => provider.setLedGreen(v),
+          ),
         ],
       ),
     );
   }
 
-  Widget _ledIndicator(String label, bool isOn, Color color, ValueChanged<bool> onTap) {
+  Widget _ledIndicator(
+    String label,
+    bool isOn,
+    Color color,
+    ValueChanged<bool> onTap,
+  ) {
     return GestureDetector(
       onTap: () => onTap(!isOn),
       child: Column(
@@ -327,12 +580,26 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: isOn ? color : color.withValues(alpha: 0.2),
-              boxShadow: isOn ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8, spreadRadius: 2)] : null,
+              boxShadow: isOn
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.5),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
               border: Border.all(color: color, width: 2),
             ),
           ),
           const SizedBox(height: 4),
-          Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w500)),
+          Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

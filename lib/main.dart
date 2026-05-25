@@ -4,12 +4,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'providers/farm_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+
 void main() {
   runApp(
     MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => FarmProvider()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => FarmProvider())],
       child: const SmartFarmingApp(),
     ),
   );
@@ -31,6 +30,12 @@ class _SmartFarmingAppState extends State<SmartFarmingApp> {
     });
   }
 
+  void _logout() {
+    setState(() {
+      _isLoggedIn = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -45,8 +50,8 @@ class _SmartFarmingAppState extends State<SmartFarmingApp> {
         useMaterial3: true,
         textTheme: GoogleFonts.poppinsTextTheme(),
       ),
-      home: _isLoggedIn 
-          ? const HomeScreen() 
+      home: _isLoggedIn
+          ? HomeScreen(onLogout: _logout)
           : LoginScreen(onLoginSuccess: _login),
     );
   }
